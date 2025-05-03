@@ -3,11 +3,7 @@ use std::string;
 use sui::table;
 use sui::table::Table;
 use sui::transfer::{transfer};
-
-// public struct Role has key, store {
-//     id: UID,
-//     role: string::String
-// }
+use sui::package;
 
 
 public struct Identity has key, store {
@@ -22,7 +18,9 @@ public struct AppState has key {
     registry: Table<u8, string::String>,
 }
 
-fun init(ctx: &mut TxContext) {
+public struct IDENTITY has drop {}
+
+fun init(otw: IDENTITY, ctx: &mut TxContext) {
     let signer = tx_context::sender(ctx);
     let mut registry = table::new<u8, string::String>(ctx);
     table::add(&mut registry, 1, string::utf8(b"Artist"));
@@ -31,6 +29,9 @@ fun init(ctx: &mut TxContext) {
     table::add(&mut registry, 4, string::utf8(b"Meme Lord"));
     table::add(&mut registry, 5, string::utf8(b"Explorer"));
     transfer(AppState { id: object::new(ctx), registry }, signer);
+
+    let publisher = package::claim(otw, ctx);
+    transfer::public_transfer(publisher, ctx.sender());
 }
 
 public fun register(role_num: u8, ctx: &mut TxContext) {

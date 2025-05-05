@@ -65,3 +65,47 @@ fun init(otw: TIP, ctx: &mut TxContext) {
     transfer::public_transfer(creator_tip_pool, ctx.sender());
 }
 
+public fun tip_nft_platform_ref(
+    creator_record: &CreatorRecord,
+    nft_address: &ID,
+    tip_coin: &mut Coin<SUI>,
+    reference: address,
+    platform: address,
+    ctx: &mut TxContext
+) {
+    let creator = table::borrow(&creator_record.creator_record, *nft_address);
+
+    let amount = tip_coin.value();
+    let platform_fee = amount / 10;
+    let platform_coin = tip_coin.split(platform_fee, ctx);
+    public_transfer(platform_coin, platform);
+    let mut ref_fee = 0;
+    if (reference != @0) {
+        ref_fee = amount / 10;
+        let ref_coin = tip_coin.split(ref_fee, ctx);
+        public_transfer(ref_coin, reference);
+    };
+
+    let creator_share = tip_coin.value();
+    // 触发事件
+    let tip_event = TipEvent {
+        nft: *nft_address,
+        tipper: tx_context::sender(ctx),
+        creator,
+        amount,
+        platform_share: platform_fee,
+        reference_share: ref_fee,
+        creator_share,
+    };
+    event::emit(tip_event);
+}
+
+public fun tip_nft_creator(
+    nft: &CopyrightNFT,
+    tip_coin: Coin<SUI>,
+    ctx: &mut TxContext
+) {
+    public_transfer(tip_coin, get_nft_creator(nft));
+}
+
+

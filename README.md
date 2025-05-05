@@ -34,6 +34,17 @@ claim_nft
 sui client call --package 0xbd0b1b3620f1d294b2e4185796b58b3efb873d2c85164f6fda38bfe2998b0f42   --module nft_auction --function claim_nft  --args 0x55131d7ed8c853fa402f3e7c75f963ef0c6193c5921f485fd41e689c6be65e4c --gas-budget 100000000 
 ```
 
+# tip
+
+tip_nft_platform_ref
+```shell
+sui client call --package 0x0664ba7b19ee8a5ffbdd247ed1da135e9b253d3f12680e983c76e5ba3ac0a01a   --module tip --function tip_nft_platform_ref  --args 0xb1b8001543d331d1b42289e26b2fa2c6ac2917fc3d1b0e0a85adcd02699f82f0 0x755af5faaff1e9d795c1c3620eb92036be696e013e3bd993f3f0bcbcedb8e131 0xd615979500b79b9b79c9d64215189ea90c05fd5040a3cf83a8a87563d23ae26d 0x007dcc09755ab7423e7b0801694c0b05dd0d974043a7f890030fdd37b32681ab --gas-budget 100000000 
+```
+
+tip_nft_creator
+```shell
+sui client call --package 0x2e956a1aa779ae69421645760d290691c94da4e8d4308d6363248675dbe22eb6   --module tip --function tip_nft_creator  --args 0x1e428a936fced96dc3227c5b9987c6806cce01d6dd4a0293cd2769c2d43bef7f 0xbb9ad4671d7b293778d592204bdb5b0939d6462ae301cab006c9294d1d65fce0 --gas-budget 100000000 
+```
 
 # published package
 

@@ -213,7 +213,6 @@ public entry fun end_auction(
     auction.auction_ended = true;
 
     // Check if there were any bids
-    // todo 自己拍的时候余额会消失
     if (auction.highest_bidder == auction.seller) {
         // No bids were placed, return the NFT to the seller
         let nft = std::option::extract(&mut auction.nft);
@@ -266,7 +265,6 @@ public fun claim_nft(auction: &mut Auction, ctx: &mut TxContext) {
     });
 }
 
-//Getter functions for testing
 public fun current_bid(auction: &Auction): u64 {
     auction.current_bid
 }

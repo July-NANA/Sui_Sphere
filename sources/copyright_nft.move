@@ -545,7 +545,7 @@ fun update_balance_with_coin(auction: &mut Auction, new_amount: u64, payment: &m
     // Need to add to the balance
     let to_add = new_amount - current_value;
     let added = payment.split(to_add, ctx);
-    current_balance.join(coin::into_balance(added));
+    _ = current_balance.join(coin::into_balance(added));
 }
 
 

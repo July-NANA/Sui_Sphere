@@ -58,7 +58,7 @@ sui client call --package 0xcc603b548cbd3e32dc4e5b8b3d59cc276f0c76daaea75f21cce9
 
 place_bid(Auction,Clock,Coin,reference)
 ```shell
-sui client call --package 0xcc603b548cbd3e32dc4e5b8b3d59cc276f0c76daaea75f21cce9be7e5529bea2   --module copyright_nft --function place_bid  --args 0xd2304e27eb181ba3785235285383c29f8cee21c162ce28a40a3aac164ff14c2c 0x0000000000000000000000000000000000000000000000000000000000000006 0x8dcde5e1652d06c9ed6f401d5658502b0a24b58ef73bd3fc4f292b168d5eb3ac 0x007dcc09755ab7423e7b0801694c0b05dd0d974043a7f890030fdd37b32681ab --gas-budget 100000000 
+sui client call --package 0xe869011ccc563ffe4a10ec6f1ad1d49c4bf469ba16c9f3223f41ff365f768ab6   --module copyright_nft --function place_bid  --args 0xea7f660da3725699cf20fbf612af29b4ee6d7d7973602e61b64bfd04c650bd3c 0x0000000000000000000000000000000000000000000000000000000000000006 0x27e4a25c1def27ad07c729ed4a032c2d2a35795d47c4be03b1a4444f6c2d6816 0x007dcc09755ab7423e7b0801694c0b05dd0d974043a7f890030fdd37b32681ab --gas-budget 100000000 
 ```
 
 end_auction(AchievementRecord,revenue_share,AuctionCap,Auction,Clock,RevenueCap)

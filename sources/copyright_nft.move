@@ -1,7 +1,6 @@
 module sui_sphere::copyright_nft;
 
 use std::string::{Self, String, utf8};
-use std::uq32_32::le;
 use sui::balance::{Self, Balance};
 use sui::clock;
 use sui::clock::Clock;
@@ -12,6 +11,8 @@ use sui::display;
 use sui::event;
 use sui::object::{ uid_to_address};
 use sui::sui::SUI;
+use sui::random;
+use sui::random::Random;
 
 //Error constants
 
@@ -19,7 +20,7 @@ const ENoRevenueTip: u64 = 0;
 
 const ENoRferenceTip: u64 = 1;
 
-const ENoCreatorTip: u64 = 2;
+const ENoNFTTip: u64 = 2;
 
 const ETimeExpired: u64 = 3;
 
@@ -39,9 +40,17 @@ const ENoRewardClaim: u64 = 10;
 
 const EExistNFT: u64 = 11;
 
-const Admin: address = @0x007dcc09755ab7423e7b0801694c0b05dd0d974043a7f890030fdd37b32681ab;
+const ENoLottery: u64 = 12;
+
+const ENoPrize: u64 = 13;
+
+const Admin: address = @0xf9f49fe1745bfd0330a82dc9c67977efba699a46012da96b394b7d0170a38242;
 
 const ReferenceShare: u8 = 20;// 1/20
+
+const LotteryShare: u8 = 20;// 1/20
+
+const RevenueShare: u8 = 10;
 
 public struct CopyrightNFT has key, store {
     id: UID,
@@ -79,7 +88,7 @@ public struct ReferenceTipPool has key, store {
     balance: Table<address, Coin<SUI>>,
 }
 
-public struct CreatorTipPool has key, store {
+public struct NFTTipPool has key, store {
     id: UID,
     // owner: address,
     balance: Table<address, Coin<SUI>>,
@@ -128,6 +137,17 @@ public struct AchievementRecord has key, store {
     tip_recived: Table<address, u64>
 }
 
+// lottery
+
+public struct LotteryPool has key, store {
+    id: UID,
+    lottery: Table<address, Coin<SUI>>,
+    // <nft_address,reward coin>
+    ticket: Table<address, vector<address>>,
+    // <nft_address,ticket owner list>
+    winner_prize: Table<address, Coin<SUI>>,
+}
+
 // Events
 public struct NFTMinted has copy, drop {
     object_id: ID,
@@ -138,7 +158,6 @@ public struct NFTMinted has copy, drop {
 public struct TipEvent has copy, drop {
     nft: ID,
     tipper: address,
-    creator: address,
     amount: u64,
     platform_share: u64,
     reference_share: u64,
@@ -233,7 +252,7 @@ fun init(otw: COPYRIGHT_NFT, ctx: &mut TxContext) {
     };
     transfer::share_object(reference_tip_pool);
 
-    let creator_tip_pool = CreatorTipPool {
+    let creator_tip_pool = NFTTipPool {
         id: object::new(ctx),
         balance: table::new<address, Coin<SUI>>(ctx),
     };
@@ -252,10 +271,19 @@ fun init(otw: COPYRIGHT_NFT, ctx: &mut TxContext) {
         tip_recived: table::new<address, u64>(ctx),
     };
     transfer::share_object(achievement_record);
+
+    let lottery_pool = LotteryPool {
+        id: object::new(ctx),
+        lottery: table::new<address, Coin<SUI>>(ctx),
+        ticket: table::new<address, vector<address>>(ctx),
+        winner_prize: table::new<address, Coin<SUI>>(ctx),
+    };
+    transfer::share_object(lottery_pool);
 }
 
 
 public fun mint(
+    lottery_pool: &mut LotteryPool,
     mint_record: &mut MintRecord,
     creator_record: &mut CreatorRecord,
     name: vector<u8>,
@@ -268,7 +296,7 @@ public fun mint(
     ctx: &mut TxContext)
 {
     let uid = object::new(ctx);
-
+    let nft_address = uid_to_address(&uid);
     if (!table::contains(&mint_record.record, creator)) {
         table::add(&mut mint_record.record, creator, vector::empty<u64>())
     };
@@ -281,7 +309,7 @@ public fun mint(
     if (!table::contains(&creator_record.creator_record, uid_to_address(&uid))) {
         table::add(&mut creator_record.creator_record, uid_to_address(&uid), creator);
     }else {
-        abort EExistNFT;
+        abort EExistNFT
     };
 
     let nft = CopyrightNFT {
@@ -303,6 +331,8 @@ public fun mint(
     });
 
     transfer::public_transfer(nft, creator);
+
+    new_ticket(nft_address, creator, lottery_pool);
 }
 
 public fun get_nft_id(copyright_nft: &CopyrightNFT): &UID {
@@ -336,12 +366,14 @@ public entry fun burn(mint_record: &mut MintRecord, creator_record: &mut Creator
 
 
 public fun tip_nft(
+    lottery_pool: &mut LotteryPool,
     achievement_record: &mut AchievementRecord,
-    creator_record: &CreatorRecord,
+    // creator_record: &CreatorRecord,
+    // nft: & CopyrightNFT,
     nft_address: address,
     revenue_tip_pool: &mut RevenueTipPool,
     reference_tip_pool: &mut ReferenceTipPool,
-    creator_tip_pool: &mut CreatorTipPool,
+    nft_tip_pool: &mut NFTTipPool,
     mut tip_coin: Coin<SUI>,
     mut revenue: address,
     reference: address,
@@ -351,7 +383,8 @@ public fun tip_nft(
     revenue = Admin;
 
 
-    let creator = table::borrow(&creator_record.creator_record, nft_address);
+    // let creator = table::borrow(&creator_record.creator_record, nft_address);
+    // let nft_address = uid_to_address(&nft.id);
 
     let amount = tip_coin.value();
 
@@ -376,26 +409,32 @@ public fun tip_nft(
         coin::join(reference_wallet, ref_coin);
     };
 
-    let creator_share = tip_coin.value();
-    if (!table::contains(&creator_tip_pool.balance, *creator)) {
-        table::add(&mut creator_tip_pool.balance, *creator, coin::zero<SUI>(ctx))
+    // lottery
+    let lottery_share = amount / (LotteryShare as u64);
+    let new_lottery = coin::split(&mut tip_coin, lottery_share, ctx);
+    add_lottery(nft_address, new_lottery, lottery_pool, ctx);
+    new_ticket(nft_address, ctx.sender(), lottery_pool);
+
+
+    let nft_share = tip_coin.value();
+    if (!table::contains(&nft_tip_pool.balance, nft_address)) {
+        table::add(&mut nft_tip_pool.balance, nft_address, coin::zero<SUI>(ctx))
     };
-    let creator_wallet = table::borrow_mut(&mut creator_tip_pool.balance, *creator);
+    let creator_wallet = table::borrow_mut(&mut nft_tip_pool.balance, nft_address);
     coin::join(creator_wallet, tip_coin);
 
     // 触发事件
     let tip_event = TipEvent {
         nft: object::id_from_address(nft_address),
         tipper: tx_context::sender(ctx),
-        creator: *creator,
         amount,
         platform_share: revenue_fee,
         reference_share: ref_fee,
-        creator_share,
+        creator_share: nft_share,
     };
     event::emit(tip_event);
 
-    update_achievement_record(&mut achievement_record.tip_recived, *creator, amount);
+    update_achievement_record(&mut achievement_record.tip_recived, nft_address, amount);
     update_achievement_record(&mut achievement_record.tip_count, ctx.sender(), 1);
 }
 
@@ -432,16 +471,17 @@ public fun reference_claim_tip(reference_tip_pool: &mut ReferenceTipPool, ctx: &
     transfer::public_transfer(reference_wallet, ctx.sender());
 }
 
-public fun creator_claim_tip(creator_tip_pool: &mut CreatorTipPool, ctx: &mut TxContext) {
-    assert!(table::contains(&creator_tip_pool.balance, ctx.sender()), ENoCreatorTip);
-    let creator_wallet = table::remove(&mut creator_tip_pool.balance, ctx.sender());
+public fun owner_claim_tip(creator_tip_pool: &mut NFTTipPool, nft: &CopyrightNFT, ctx: &mut TxContext) {
+    let nft_address = uid_to_address(&nft.id);
+    assert!(table::contains(&creator_tip_pool.balance, nft_address), ENoNFTTip);
+    let nft_wallet = table::remove(&mut creator_tip_pool.balance, ctx.sender());
     // transfer::public_transfer(creator_wallet, ctx.sender());
     event::emit(Tip_Claimed {
-        claim_identity: string::utf8(b"creator"),
+        claim_identity: string::utf8(b"nft"),
         claimer: ctx.sender(),
-        claimed_amount: creator_wallet.value()
+        claimed_amount: nft_wallet.value()
     });
-    transfer::public_transfer(creator_wallet, ctx.sender());
+    transfer::public_transfer(nft_wallet, ctx.sender());
 }
 
 
@@ -493,6 +533,7 @@ public entry fun create_auction(nft: CopyrightNFT, min_bid: u64, duration: u64, 
 
 //Function for placing a new bid
 public entry fun place_bid(
+    lottery_pool: &mut LotteryPool,
     auction: &mut Auction,
     clock: &Clock,
     coin: &mut Coin<SUI>,
@@ -529,6 +570,11 @@ public entry fun place_bid(
     //We update the balance in the auction by calling this function
     update_balance_with_coin(auction, coin_value, coin, ctx);
 
+    // add to lottery list
+    let nft = option::borrow(&auction.nft);
+    let nft_address = object::id_address(nft);
+    new_ticket(nft_address, bidder, lottery_pool);
+
     event::emit(BidPlaced {
         auction_id: object::id(auction),
         bidder,
@@ -551,8 +597,9 @@ fun update_balance_with_coin(auction: &mut Auction, new_amount: u64, payment: &m
 
 //Function for ending the auction
 public entry fun end_auction(
+    lottery_pool: &mut LotteryPool,
+    random: &Random,
     achievement_record: &mut AchievementRecord,
-    revenue_share: u64,
     cap: &AuctionCap,
     auction: &mut Auction,
     clock: &Clock,
@@ -583,9 +630,10 @@ public entry fun end_auction(
         let final_price = auction.current_bid;
 
         let mut payment = coin::take(&mut auction.coin_balance, final_price, ctx);
+        let paied_value = payment.value();
 
         //revenue share
-        let revenue_value = payment.value() * revenue_share / 100;
+        let revenue_value = paied_value * (RevenueShare as u64) / 100;
         let revenue_coin = payment.split(revenue_value, ctx);
         if (table::contains(auction_reward, revenue_cap.revenue_address)) {
             let remain_coin = table::borrow_mut(auction_reward, revenue_cap.revenue_address);
@@ -601,7 +649,7 @@ public entry fun end_auction(
         if (table::contains(&auction.reference_reord, auction.highest_bidder)) {
             let mut _ref_fee = 0;
             let reference = table::borrow(&auction.reference_reord, auction.highest_bidder);
-            _ref_fee = payment.value() / (ReferenceShare as u64);
+            _ref_fee = paied_value / (ReferenceShare as u64);
             let ref_coin = payment.split(_ref_fee, ctx);
             if (table::contains(auction_reward, *reference)) {
                 let remain_coin = table::borrow_mut(auction_reward, *reference);
@@ -610,6 +658,13 @@ public entry fun end_auction(
                 table::add(auction_reward, *reference, ref_coin);
             };
         };
+
+        // update lottery
+        let lottery_share = paied_value / (LotteryShare as u64);
+        let new_lottery = coin::split(&mut payment, lottery_share, ctx);
+        let nft = option::borrow(&auction.nft);
+        let nft_address = object::id_address(nft);
+        add_lottery(nft_address, new_lottery, lottery_pool, ctx);
 
 
         // Transfer funds to the seller
@@ -628,6 +683,8 @@ public entry fun end_auction(
         });
 
         update_achievement_record(&mut achievement_record.bid_count, winner, 1);
+
+        settle_prize(nft_address, lottery_pool, random, ctx);
     }
 }
 
@@ -658,3 +715,51 @@ public fun claim_reward(auction: &mut Auction, ctx: &mut TxContext) {
     transfer::public_transfer(reward, ctx.sender());
 }
 
+fun new_ticket(nft_address: address, owner: address, lottery_pool: &mut LotteryPool) {
+    if (!table::contains(&lottery_pool.ticket, nft_address)) {
+        table::add(&mut lottery_pool.ticket, nft_address, vector::empty<address>());
+    };
+    let ticket_list = table::borrow_mut(&mut lottery_pool.ticket, nft_address);
+    vector::push_back(ticket_list, owner);
+}
+
+fun add_lottery(nft_address: address, new_lottery: Coin<SUI>, lottery_pool: &mut LotteryPool, ctx: &mut TxContext) {
+    if (!table::contains(&lottery_pool.lottery, nft_address)) {
+        table::add(&mut lottery_pool.lottery, nft_address, coin::zero<SUI>(ctx));
+    };
+    let lottery = table::borrow_mut(&mut lottery_pool.lottery, nft_address);
+    coin::join(lottery, new_lottery);
+}
+
+fun settle_prize(nft_address: address, lottery_pool: &mut LotteryPool, random: &Random, ctx: &mut TxContext) {
+    assert!(table::contains(&lottery_pool.ticket, nft_address), ENoLottery);
+    assert!(table::contains(&lottery_pool.lottery, nft_address), ENoLottery);
+    let mut ticket_list = table::remove(&mut lottery_pool.ticket, nft_address);
+    let prize_coin = table::remove(&mut lottery_pool.lottery, nft_address);
+    let ticket_count = vector::length(&ticket_list);
+    let mut ran_generator = random::new_generator(random, ctx);
+    let winner_index = random::generate_u64_in_range(&mut ran_generator, 0, ticket_count);
+    let winner = vector::borrow_mut(&mut ticket_list, winner_index);
+
+    if (!table::contains(&lottery_pool.winner_prize, *winner)) {
+        table::add(&mut lottery_pool.winner_prize, *winner, coin::zero<SUI>(ctx));
+    };
+    let winner_wallet = table::borrow_mut(&mut lottery_pool.winner_prize, *winner);
+    coin::join(winner_wallet, prize_coin);
+
+    clean_vector(&mut ticket_list);
+    vector::destroy_empty(ticket_list);
+}
+
+fun clean_vector<T: drop>(target: &mut vector<T>) {
+    while (!vector::is_empty(target)) {
+        let _ = vector::pop_back(target);
+    }
+}
+
+
+public fun claim_prize(lottery_pool: &mut LotteryPool, ctx: &mut TxContext) {
+    assert!(table::contains(&lottery_pool.winner_prize, ctx.sender()), ENoPrize);
+    let prize_coin = table::remove(&mut lottery_pool.winner_prize, ctx.sender());
+    transfer::public_transfer(prize_coin, ctx.sender());
+}

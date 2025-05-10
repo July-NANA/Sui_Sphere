@@ -103,5 +103,5 @@ burn(MintRecord,RevenueCap,BadgeNFT)
 
 # published package
 
-package:0xe869011ccc563ffe4a10ec6f1ad1d49c4bf469ba16c9f3223f41ff365f768ab6
-Transaction Digest: EvkmkK5K8a9UpKk8kGe8iB9gWSwGH5Pvwuc2CDSiFEuP
+package:0xd601e5cda50f81548bcb9286400d6f0e6dfdadd4c1979c9db035090dbd271484
+Transaction Digest: 6PNkuHyBJxUReFxXFNTyN8xDdysYrAp7aiC5kEoGePM3
